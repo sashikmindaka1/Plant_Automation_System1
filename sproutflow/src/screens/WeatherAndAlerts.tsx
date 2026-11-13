@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
     LayoutAnimation,
     Modal,
@@ -16,6 +16,10 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+// Firebase Imports
+import { collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { db } from '../api/firebaseConfig';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -40,14 +44,16 @@ const C = {
     line: '#EEF1F0',
 };
 
+// Changed id to string to support Firebase document IDs
 type AlertItem = {
-    id: number;
+    id: string;
     severity: 'critical' | 'warning';
     title: string;
     subtitle: string;
     time: string;
     detail: string;
     action: string;
+    is_read?: boolean; 
 };
 
 type HistoryItem = {
@@ -114,7 +120,7 @@ const WEATHER_PRESETS: WeatherPreset[] = [
 
 const INITIAL_ALERTS: AlertItem[] = [
     {
-        id: 1,
+        id: 'demo-1',
         severity: 'critical',
         title: 'Critical Low Moisture',
         subtitle: 'Monstera · Balcony Zone',
@@ -123,7 +129,7 @@ const INITIAL_ALERTS: AlertItem[] = [
         action: 'Water now',
     },
     {
-        id: 2,
+        id: 'demo-2',
         severity: 'warning',
         title: 'Water Tank Low',
         subtitle: 'Backyard Greenhouse',
@@ -166,8 +172,8 @@ const INITIAL_HISTORY: HistoryItem[] = [
 export default function WeatherAndAlerts() {
     const router = useRouter();
 
-    const [expandedId, setExpandedId] = useState<number | null>(1);
-    const [alerts, setAlerts] = useState<AlertItem[]>(INITIAL_ALERTS);
+    const [expandedId, setExpandedId] = useState<string | null>('demo-1');
+    const [alerts, setAlerts] = useState<AlertItem[]>([]);
     const [history, setHistory] = useState<HistoryItem[]>(INITIAL_HISTORY);
     const [weatherIdx, setWeatherIdx] = useState<number>(0);
 
@@ -185,6 +191,24 @@ export default function WeatherAndAlerts() {
         { icon: 'rainy-outline', label: 'Rain', value: currentWeather.rain },
     ];
 
+    // Listen to Firebase Real-time Updates
+    useEffect(() => {
+        const q = query(collection(db, 'notifications'), orderBy('created_at', 'desc'));
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const liveAlerts = snapshot.docs.map(d => ({
+                id: d.id,
+                ...d.data()
+            })) as AlertItem[];
+            
+            // Filter unread alerts for the active view
+            const unread = liveAlerts.filter(a => !a.is_read);
+            setAlerts(unread.length > 0 ? unread : []);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
     const handleBack = () => {
         if (router.canGoBack()) {
             router.back();
@@ -193,14 +217,15 @@ export default function WeatherAndAlerts() {
         }
     };
 
-    const toggleExpand = (id: number) => {
+    const toggleExpand = (id: string) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setExpandedId(expandedId === id ? null : id);
     };
 
-    const handleAction = (item: AlertItem) => {
+    const handleAction = async (item: AlertItem) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setAlerts((prev) => prev.filter((a) => a.id !== item.id));
+        
+        // 1. Optimistically add to history
         setHistory((prev) => [
             {
                 id: Date.now(),
@@ -213,11 +238,35 @@ export default function WeatherAndAlerts() {
             },
             ...prev,
         ]);
+
+        // 2. Update Firestore if it's a real database alert
+        if (!item.id.startsWith('demo-')) {
+            try {
+                const alertRef = doc(db, 'notifications', item.id);
+                await updateDoc(alertRef, { is_read: true });
+            } catch (error) {
+                console.error("Error updating action in Firebase:", error);
+            }
+        } else {
+            // Local fallback for demo data
+            setAlerts((prev) => prev.filter((a) => a.id !== item.id));
+        }
     };
 
-    const handleDismiss = (id: number) => {
+    const handleDismiss = async (id: string) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setAlerts((prev) => prev.filter((a) => a.id !== id));
+        
+        if (!id.startsWith('demo-')) {
+            try {
+                const alertRef = doc(db, 'notifications', id);
+                await updateDoc(alertRef, { is_read: true });
+            } catch (error) {
+                console.error("Error dismissing alert in Firebase:", error);
+            }
+        } else {
+            // Local fallback for demo data
+            setAlerts((prev) => prev.filter((a) => a.id !== id));
+        }
     };
 
     const handleClearHistory = () => {
@@ -227,9 +276,10 @@ export default function WeatherAndAlerts() {
 
     const handleResetDemo = () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        // This will override the empty state with local data for presentation purposes
         setAlerts(INITIAL_ALERTS);
         setHistory(INITIAL_HISTORY);
-        setExpandedId(1);
+        setExpandedId('demo-1');
         setSettingsVisible(false);
     };
 
