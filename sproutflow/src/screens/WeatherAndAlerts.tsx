@@ -46,7 +46,7 @@ const C = {
 
 type AlertItem = {
     id: string;
-    severity: 'critical' | 'warning';
+    severity: 'critical' | 'warning' | 'success' | 'info';
     title: string;
     subtitle: string;
     time?: string;
@@ -406,21 +406,31 @@ export default function WeatherAndAlerts() {
                             </View>
                         ) : (
                             history.map((h, i) => {
-                                const critical = h.severity === 'critical';
-                                const accent = critical ? C.red : C.amber;
-                                const soft = critical ? C.redSoft : C.amberSoft;
+                                // Dynamic styling based on severity!
+                                let accent = C.amber;
+                                let soft = C.amberSoft;
+                                let iconName: keyof typeof Ionicons.glyphMap = 'notifications';
+
+                                if (h.severity === 'critical') {
+                                    accent = C.red; soft = C.redSoft; iconName = 'warning';
+                                } else if (h.severity === 'warning') {
+                                    accent = C.amber; soft = C.amberSoft; iconName = 'alert-circle';
+                                } else if (h.severity === 'success') {
+                                    accent = C.green700; soft = C.green100; iconName = 'shield-checkmark';
+                                } else if (h.severity === 'info') {
+                                    accent = C.blue; soft = C.blueSoft; iconName = 'water';
+                                }
                                 
                                 return (
                                     <View key={h.id}>
                                         <View style={styles.historyRow}>
                                             <View style={[styles.historyIcon, { backgroundColor: soft }]}>
-                                                <Ionicons name={critical ? 'warning' : 'water'} size={20} color={accent} />
+                                                <Ionicons name={iconName} size={20} color={accent} />
                                             </View>
                                             <View style={{ flex: 1 }}>
                                                 <Text style={styles.historyTitle}>{h.title}</Text>
                                                 <Text style={styles.historyMsg}>{h.subtitle}</Text>
                                             </View>
-                                            <Text style={styles.historyTime}>{h.time || 'Recent'}</Text>
                                         </View>
                                         {i < history.length - 1 && <View style={styles.divider} />}
                                     </View>
