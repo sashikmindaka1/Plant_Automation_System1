@@ -44,26 +44,16 @@ const C = {
     line: '#EEF1F0',
 };
 
-// Changed id to string to support Firebase document IDs
 type AlertItem = {
     id: string;
     severity: 'critical' | 'warning';
     title: string;
     subtitle: string;
-    time: string;
+    time?: string;
     detail: string;
     action: string;
-    is_read?: boolean; 
-};
-
-type HistoryItem = {
-    id: number;
-    icon: keyof typeof Ionicons.glyphMap;
-    bg: string;
-    color: string;
-    title: string;
-    msg: string;
-    time: string;
+    is_read: boolean;
+    created_at?: string;
 };
 
 type WeatherPreset = {
@@ -118,63 +108,12 @@ const WEATHER_PRESETS: WeatherPreset[] = [
     },
 ];
 
-const INITIAL_ALERTS: AlertItem[] = [
-    {
-        id: 'demo-1',
-        severity: 'critical',
-        title: 'Critical Low Moisture',
-        subtitle: 'Monstera · Balcony Zone',
-        time: '2 min ago',
-        detail: 'Soil moisture dropped to 12%, below your 25% threshold. Watering is recommended now.',
-        action: 'Water now',
-    },
-    {
-        id: 'demo-2',
-        severity: 'warning',
-        title: 'Water Tank Low',
-        subtitle: 'Backyard Greenhouse',
-        time: '15 min ago',
-        detail: 'Tank level is at 12%, below your 15% warning threshold. Refill soon to keep auto-watering running.',
-        action: 'Refill tank',
-    },
-];
-
-const INITIAL_HISTORY: HistoryItem[] = [
-    {
-        id: 101,
-        icon: 'leaf',
-        bg: C.green100,
-        color: C.green500,
-        title: 'Fertilizer completed',
-        msg: 'All plant containers updated',
-        time: '2h ago',
-    },
-    {
-        id: 102,
-        icon: 'water',
-        bg: C.blueSoft,
-        color: C.blue,
-        title: 'Auto watering done',
-        msg: 'Balcony zone · 1.2 L used',
-        time: '5h ago',
-    },
-    {
-        id: 103,
-        icon: 'shield-checkmark',
-        bg: C.green100,
-        color: C.green700,
-        title: 'System check passed',
-        msg: 'All virtual sensors online',
-        time: 'Yesterday',
-    },
-];
-
 export default function WeatherAndAlerts() {
     const router = useRouter();
 
-    const [expandedId, setExpandedId] = useState<string | null>('demo-1');
+    const [expandedId, setExpandedId] = useState<string | null>(null);
     const [alerts, setAlerts] = useState<AlertItem[]>([]);
-    const [history, setHistory] = useState<HistoryItem[]>(INITIAL_HISTORY);
+    const [history, setHistory] = useState<AlertItem[]>([]);
     const [weatherIdx, setWeatherIdx] = useState<number>(0);
 
     // Threshold Customization Modal State
@@ -201,9 +140,9 @@ export default function WeatherAndAlerts() {
                 ...d.data()
             })) as AlertItem[];
             
-            // Filter unread alerts for the active view
-            const unread = liveAlerts.filter(a => !a.is_read);
-            setAlerts(unread.length > 0 ? unread : []);
+            // Filter unread alerts for the active view, read alerts for history
+            setAlerts(liveAlerts.filter(a => !a.is_read));
+            setHistory(liveAlerts.filter(a => a.is_read));
         });
 
         return () => unsubscribe();
@@ -224,63 +163,22 @@ export default function WeatherAndAlerts() {
 
     const handleAction = async (item: AlertItem) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        
-        // 1. Optimistically add to history
-        setHistory((prev) => [
-            {
-                id: Date.now(),
-                icon: item.severity === 'critical' ? 'water' : 'checkmark-circle',
-                bg: C.green100,
-                color: C.green500,
-                title: `${item.action} completed`,
-                msg: `${item.subtitle} · Resolved via Alert Center`,
-                time: 'Just now',
-            },
-            ...prev,
-        ]);
-
-        // 2. Update Firestore if it's a real database alert
-        if (!item.id.startsWith('demo-')) {
-            try {
-                const alertRef = doc(db, 'notifications', item.id);
-                await updateDoc(alertRef, { is_read: true });
-            } catch (error) {
-                console.error("Error updating action in Firebase:", error);
-            }
-        } else {
-            // Local fallback for demo data
-            setAlerts((prev) => prev.filter((a) => a.id !== item.id));
+        try {
+            const alertRef = doc(db, 'notifications', item.id);
+            await updateDoc(alertRef, { is_read: true });
+        } catch (error) {
+            console.error("Error updating action in Firebase:", error);
         }
     };
 
     const handleDismiss = async (id: string) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        
-        if (!id.startsWith('demo-')) {
-            try {
-                const alertRef = doc(db, 'notifications', id);
-                await updateDoc(alertRef, { is_read: true });
-            } catch (error) {
-                console.error("Error dismissing alert in Firebase:", error);
-            }
-        } else {
-            // Local fallback for demo data
-            setAlerts((prev) => prev.filter((a) => a.id !== id));
+        try {
+            const alertRef = doc(db, 'notifications', id);
+            await updateDoc(alertRef, { is_read: true });
+        } catch (error) {
+            console.error("Error dismissing alert in Firebase:", error);
         }
-    };
-
-    const handleClearHistory = () => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setHistory([]);
-    };
-
-    const handleResetDemo = () => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        // This will override the empty state with local data for presentation purposes
-        setAlerts(INITIAL_ALERTS);
-        setHistory(INITIAL_HISTORY);
-        setExpandedId('demo-1');
-        setSettingsVisible(false);
     };
 
     return (
@@ -419,9 +317,6 @@ export default function WeatherAndAlerts() {
                             <Text style={styles.emptyAlertSub}>
                                 Soil moisture and virtual tank levels are above your warning thresholds.
                             </Text>
-                            <TouchableOpacity onPress={handleResetDemo} style={styles.restoreBtn}>
-                                <Text style={styles.restoreBtnText}>Simulate Demo Alerts</Text>
-                            </TouchableOpacity>
                         </View>
                     ) : (
                         alerts.map((a) => {
@@ -460,7 +355,7 @@ export default function WeatherAndAlerts() {
                                                         {critical ? 'CRITICAL' : 'WARNING'}
                                                     </Text>
                                                 </View>
-                                                <Text style={styles.alertTime}>{a.time}</Text>
+                                                <Text style={styles.alertTime}>{a.time || 'Just now'}</Text>
                                             </View>
                                         </View>
 
@@ -500,11 +395,6 @@ export default function WeatherAndAlerts() {
                     {/* Notification History */}
                     <View style={[styles.sectionRow, { marginTop: 22 }]}>
                         <Text style={styles.sectionTitle}>Notification History</Text>
-                        {history.length > 0 && (
-                            <TouchableOpacity onPress={handleClearHistory}>
-                                <Text style={styles.seeAll}>Clear all</Text>
-                            </TouchableOpacity>
-                        )}
                     </View>
 
                     <View style={styles.historyCard}>
@@ -515,21 +405,27 @@ export default function WeatherAndAlerts() {
                                 </Text>
                             </View>
                         ) : (
-                            history.map((h, i) => (
-                                <View key={h.id}>
-                                    <View style={styles.historyRow}>
-                                        <View style={[styles.historyIcon, { backgroundColor: h.bg }]}>
-                                            <Ionicons name={h.icon} size={20} color={h.color} />
+                            history.map((h, i) => {
+                                const critical = h.severity === 'critical';
+                                const accent = critical ? C.red : C.amber;
+                                const soft = critical ? C.redSoft : C.amberSoft;
+                                
+                                return (
+                                    <View key={h.id}>
+                                        <View style={styles.historyRow}>
+                                            <View style={[styles.historyIcon, { backgroundColor: soft }]}>
+                                                <Ionicons name={critical ? 'warning' : 'water'} size={20} color={accent} />
+                                            </View>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.historyTitle}>{h.title}</Text>
+                                                <Text style={styles.historyMsg}>{h.subtitle}</Text>
+                                            </View>
+                                            <Text style={styles.historyTime}>{h.time || 'Recent'}</Text>
                                         </View>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.historyTitle}>{h.title}</Text>
-                                            <Text style={styles.historyMsg}>{h.msg}</Text>
-                                        </View>
-                                        <Text style={styles.historyTime}>{h.time}</Text>
+                                        {i < history.length - 1 && <View style={styles.divider} />}
                                     </View>
-                                    {i < history.length - 1 && <View style={styles.divider} />}
-                                </View>
-                            ))
+                                )
+                            })
                         )}
                     </View>
 
@@ -619,16 +515,10 @@ export default function WeatherAndAlerts() {
 
                         <View style={styles.modalActions}>
                             <TouchableOpacity
-                                onPress={handleResetDemo}
-                                style={styles.resetModalBtn}
-                            >
-                                <Text style={styles.resetModalBtnText}>Reset Demo Data</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
                                 onPress={() => setSettingsVisible(false)}
                                 style={styles.saveModalBtn}
                             >
-                                <Text style={styles.saveModalBtnText}>Save Thresholds</Text>
+                                <Text style={styles.saveModalBtnText}>Save Thresholds & Close</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -808,7 +698,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: 7,
     },
     countText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
-    seeAll: { color: C.green500, fontSize: 14, fontWeight: '700' },
 
     /* Empty Alert State */
     emptyAlertCard: {
@@ -833,18 +722,6 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 4,
         lineHeight: 18,
-    },
-    restoreBtn: {
-        marginTop: 14,
-        backgroundColor: C.green100,
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 10,
-    },
-    restoreBtnText: {
-        color: C.green700,
-        fontSize: 12,
-        fontWeight: '700',
     },
 
     /* Alerts */
@@ -998,19 +875,6 @@ const styles = StyleSheet.create({
     modalActions: {
         flexDirection: 'row',
         gap: 10,
-    },
-    resetModalBtn: {
-        paddingVertical: 13,
-        paddingHorizontal: 16,
-        borderRadius: 14,
-        backgroundColor: C.bg,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    resetModalBtnText: {
-        color: C.muted,
-        fontWeight: '700',
-        fontSize: 13,
     },
     saveModalBtn: {
         flex: 1,
