@@ -88,7 +88,6 @@ const TAB_LABEL: Record<ThemeKey, string> = {
     heatwave: 'Heatwave',
 };
 
-// WMO weather codes -> text + icon
 function describeCode(
     code: number,
     isDay: boolean
@@ -112,7 +111,7 @@ function pickTheme(w: LiveWeather): ThemeKey {
         w.code >= 95 ||
         w.precipitation > 0.2;
     if (rainy) return 'rainy';
-    if (w.temp >= 36 || w.feelsLike >= 40) return 'heatwave'; // tuned for Sri Lanka humidity
+    if (w.temp >= 36 || w.feelsLike >= 40) return 'heatwave';
     if (w.code >= 2) return 'cloudy';
     return 'sunny';
 }
@@ -143,9 +142,10 @@ export default function WeatherAndAlerts() {
     const [settingsVisible, setSettingsVisible] = useState<boolean>(false);
     const [moistureThreshold, setMoistureThreshold] = useState<number>(25);
     const [tankThreshold, setTankThreshold] = useState<number>(15);
+    const [phThreshold, setPhThreshold] = useState<number>(5.5);
+    const [lightThreshold, setLightThreshold] = useState<number>(20);
     const [weatherSyncEnabled, setWeatherSyncEnabled] = useState<boolean>(true);
 
-    // Fetch real weather from Open-Meteo (free, no API key)
     const fetchWeather = useCallback(async () => {
         try {
             let coords: { latitude: number; longitude: number; name: string } = { ...COLOMBO };
@@ -165,7 +165,6 @@ export default function WeatherAndAlerts() {
                     }
                 }
             } catch (locErr) {
-                // Fall back to Colombo if location fails
                 console.warn('Location unavailable, using Colombo:', locErr);
             }
 
@@ -199,11 +198,10 @@ export default function WeatherAndAlerts() {
 
     useEffect(() => {
         fetchWeather();
-        const t = setInterval(fetchWeather, 10 * 60 * 1000); // refresh every 10 min
+        const t = setInterval(fetchWeather, 10 * 60 * 1000);
         return () => clearInterval(t);
     }, [fetchWeather]);
 
-    // Derived values for the weather card
     const theme: ThemeKey = weather ? pickTheme(weather) : 'sunny';
     const desc: { text: string; icon: keyof typeof Ionicons.glyphMap } = weather
         ? describeCode(weather.code, weather.isDay)
@@ -225,7 +223,6 @@ export default function WeatherAndAlerts() {
                 ...d.data(),
             })) as AlertItem[];
 
-            // Filter unread alerts for the active view, read alerts for history
             setAlerts(liveAlerts.filter((a) => !a.is_read));
             setHistory(liveAlerts.filter((a) => a.is_read));
         });
@@ -316,7 +313,6 @@ export default function WeatherAndAlerts() {
                     >
                         <View style={[styles.circle, styles.cardCircle]} />
 
-                        {/* Auto-detected status pill */}
                         <View style={styles.presetRow}>
                             <View style={[styles.presetPill, styles.presetPillActive]}>
                                 <Text style={[styles.presetPillText, styles.presetPillTextActive]}>
@@ -345,7 +341,6 @@ export default function WeatherAndAlerts() {
                             <Ionicons name={desc.icon} size={76} color="#FFF" />
                         </View>
 
-                        {/* Smart Care Tip Banner */}
                         {weather && (
                             <View style={styles.careTipBox}>
                                 <Ionicons name="sparkles" size={14} color="#FFF" />
@@ -376,7 +371,7 @@ export default function WeatherAndAlerts() {
                             >
                                 <Ionicons name="options-outline" size={13} color={C.green700} />
                                 <Text style={styles.thresholdChipText}>
-                                    {'<'} {moistureThreshold}% / {tankThreshold}%
+                                    M:{moistureThreshold}% | T:{tankThreshold}% | pH:{phThreshold}
                                 </Text>
                             </TouchableOpacity>
                             <View style={styles.countBadge}>
@@ -390,7 +385,7 @@ export default function WeatherAndAlerts() {
                             <Ionicons name="checkmark-done-circle" size={36} color={C.green500} />
                             <Text style={styles.emptyAlertTitle}>All Plants Healthy!</Text>
                             <Text style={styles.emptyAlertSub}>
-                                Soil moisture and virtual tank levels are above your warning thresholds.
+                                Soil moisture and sensor levels are within optimal ranges.
                             </Text>
                         </View>
                     ) : (
@@ -481,27 +476,18 @@ export default function WeatherAndAlerts() {
                             </View>
                         ) : (
                             history.map((h, i) => {
-                                // Dynamic styling based on severity
                                 let accent = C.amber;
                                 let soft = C.amberSoft;
                                 let iconName: keyof typeof Ionicons.glyphMap = 'notifications';
 
                                 if (h.severity === 'critical') {
-                                    accent = C.red;
-                                    soft = C.redSoft;
-                                    iconName = 'warning';
+                                    accent = C.red; soft = C.redSoft; iconName = 'warning';
                                 } else if (h.severity === 'warning') {
-                                    accent = C.amber;
-                                    soft = C.amberSoft;
-                                    iconName = 'alert-circle';
+                                    accent = C.amber; soft = C.amberSoft; iconName = 'alert-circle';
                                 } else if (h.severity === 'success') {
-                                    accent = C.green700;
-                                    soft = C.green100;
-                                    iconName = 'shield-checkmark';
+                                    accent = C.green700; soft = C.green100; iconName = 'shield-checkmark';
                                 } else if (h.severity === 'info') {
-                                    accent = C.blue;
-                                    soft = C.blueSoft;
-                                    iconName = 'water';
+                                    accent = C.blue; soft = C.blueSoft; iconName = 'water';
                                 }
 
                                 return (
@@ -534,16 +520,17 @@ export default function WeatherAndAlerts() {
                 onRequestClose={() => setSettingsVisible(false)}
             >
                 <View style={styles.modalBackdrop}>
-                    <View style={styles.modalCard}>
+                    <ScrollView contentContainerStyle={styles.modalCard}>
                         <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Alert Threshold Settings</Text>
+                            <Text style={styles.modalTitle}>Sensor Threshold Settings</Text>
                             <TouchableOpacity onPress={() => setSettingsVisible(false)}>
                                 <Ionicons name="close-circle" size={26} color={C.muted} />
                             </TouchableOpacity>
                         </View>
 
+                        {/* Soil Moisture */}
                         <Text style={styles.modalLabel}>
-                            Critical Soil Moisture Alert: Below {moistureThreshold}%
+                            Critical Soil Moisture: Below {moistureThreshold}%
                         </Text>
                         <View style={styles.stepperRow}>
                             {[15, 20, 25, 30, 35].map((val) => (
@@ -567,6 +554,7 @@ export default function WeatherAndAlerts() {
                             ))}
                         </View>
 
+                        {/* Water Tank */}
                         <Text style={styles.modalLabel}>
                             Low Water Tank Warning: Below {tankThreshold}%
                         </Text>
@@ -592,6 +580,59 @@ export default function WeatherAndAlerts() {
                             ))}
                         </View>
 
+                        {/* pH Threshold */}
+                        <Text style={styles.modalLabel}>
+                            pH Minimum Warning Limit: Below {phThreshold}
+                        </Text>
+                        <View style={styles.stepperRow}>
+                            {[5.0, 5.3, 5.5, 5.8, 6.0].map((val) => (
+                                <TouchableOpacity
+                                    key={val}
+                                    onPress={() => setPhThreshold(val)}
+                                    style={[
+                                        styles.stepBtn,
+                                        phThreshold === val && styles.stepBtnActive,
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.stepBtnText,
+                                            phThreshold === val && styles.stepBtnTextActive,
+                                        ]}
+                                    >
+                                        {val}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {/* Light Threshold */}
+                        <Text style={styles.modalLabel}>
+                            Low Light Intensity Warning: Below {lightThreshold}%
+                        </Text>
+                        <View style={styles.stepperRow}>
+                            {[10, 15, 20, 25, 30].map((val) => (
+                                <TouchableOpacity
+                                    key={val}
+                                    onPress={() => setLightThreshold(val)}
+                                    style={[
+                                        styles.stepBtn,
+                                        lightThreshold === val && styles.stepBtnActive,
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.stepBtnText,
+                                            lightThreshold === val && styles.stepBtnTextActive,
+                                        ]}
+                                    >
+                                        {val}%
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        {/* Weather Sync Switch */}
                         <View style={styles.switchRow}>
                             <View style={{ flex: 1 }}>
                                 <Text style={styles.switchTitle}>Smart Weather Evaporation Sync</Text>
@@ -614,7 +655,7 @@ export default function WeatherAndAlerts() {
                                 <Text style={styles.saveModalBtnText}>Save Thresholds & Close</Text>
                             </TouchableOpacity>
                         </View>
-                    </View>
+                    </ScrollView>
                 </View>
             </Modal>
         </View>
@@ -890,7 +931,6 @@ const styles = StyleSheet.create({
     },
     historyTitle: { color: C.text, fontSize: 14, fontWeight: '700' },
     historyMsg: { color: C.muted, fontSize: 12, marginTop: 2 },
-    historyTime: { color: C.faint, fontSize: 11 },
     divider: { height: 1, backgroundColor: C.line, marginLeft: 56 },
 
     /* Modal */
@@ -904,12 +944,13 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 28,
         borderTopRightRadius: 28,
         padding: 22,
+        paddingBottom: 40,
     },
     modalHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 18,
+        marginBottom: 14,
     },
     modalTitle: {
         color: C.text,
@@ -920,18 +961,18 @@ const styles = StyleSheet.create({
         color: C.text,
         fontSize: 13,
         fontWeight: '700',
-        marginBottom: 8,
-        marginTop: 8,
+        marginBottom: 6,
+        marginTop: 10,
     },
     stepperRow: {
         flexDirection: 'row',
-        gap: 8,
-        marginBottom: 12,
+        gap: 6,
+        marginBottom: 6,
     },
     stepBtn: {
         flex: 1,
-        paddingVertical: 10,
-        borderRadius: 12,
+        paddingVertical: 9,
+        borderRadius: 10,
         backgroundColor: C.bg,
         alignItems: 'center',
     },
@@ -941,7 +982,7 @@ const styles = StyleSheet.create({
     stepBtnText: {
         color: C.muted,
         fontWeight: '700',
-        fontSize: 13,
+        fontSize: 12,
     },
     stepBtnTextActive: {
         color: '#FFFFFF',
@@ -950,24 +991,23 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: C.bg,
-        padding: 14,
-        borderRadius: 16,
-        marginTop: 8,
-        marginBottom: 20,
+        padding: 12,
+        borderRadius: 14,
+        marginTop: 12,
+        marginBottom: 18,
     },
     switchTitle: {
         color: C.text,
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '700',
     },
     switchSub: {
         color: C.muted,
-        fontSize: 11,
+        fontSize: 10,
         marginTop: 2,
     },
     modalActions: {
         flexDirection: 'row',
-        gap: 10,
     },
     saveModalBtn: {
         flex: 1,

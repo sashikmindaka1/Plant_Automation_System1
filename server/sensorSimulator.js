@@ -27,7 +27,7 @@ setInterval(async () => {
 
     console.log(`📡 Moist: ${moisture}% | Tank: ${tank}% | pH: ${phLevel} | Light: ${light}%`);
 
-    // 1. CRITICAL RED ALERTS
+    // 1. CRITICAL SOIL MOISTURE ALERT (Red)
     if (moisture < MOISTURE_THRESHOLD) {
         await addDoc(collection(db, 'notifications'), {
             title: "Critically Dry Soil",
@@ -40,7 +40,20 @@ setInterval(async () => {
         });
     }
 
-    // 2. WARNING AMBER ALERTS
+    // 2. WATER TANK WARNING (Yellow)
+    if (tank < TANK_THRESHOLD) {
+        await addDoc(collection(db, 'notifications'), {
+            title: "Water Tank Low",
+            subtitle: "Main Reservoir",
+            detail: `Tank level dropped to ${tank}%, below your ${TANK_THRESHOLD}% warning threshold. Refill required for auto-watering.`,
+            severity: "warning",
+            action: "Refill Tank",
+            is_read: false,
+            created_at: new Date().toISOString()
+        });
+    }
+
+    // 3. pH IMPAIRMENT WARNING (Yellow)
     if (phLevel < 5.5 || phLevel > 7.5) {
         await addDoc(collection(db, 'notifications'), {
             title: "pH Imbalance Detected",
@@ -53,6 +66,7 @@ setInterval(async () => {
         });
     }
 
+    // 4. LOW LIGHT WARNING (Yellow)
     if (light < 20) {
         await addDoc(collection(db, 'notifications'), {
             title: "Low Light Levels",
@@ -65,7 +79,7 @@ setInterval(async () => {
         });
     }
 
-    // 3. SUCCESS/INFO GREEN & BLUE LOGS (Bypasses active alerts, goes straight to history)
+    // 5. SUCCESS/INFO LOGS (Bypasses active alerts, goes straight to history)
     if (Math.random() > 0.7) {
         const events = [
             { title: "System check passed", subtitle: `All virtual sensors online (pH: ${phLevel})`, severity: "success", icon: "shield-checkmark" },
