@@ -83,4 +83,4 @@ setInterval(async () => {
             created_at: new Date().toISOString()
         });
     }
-}, 10000);
+}, 30000); // 30000 ms = 30 seconds

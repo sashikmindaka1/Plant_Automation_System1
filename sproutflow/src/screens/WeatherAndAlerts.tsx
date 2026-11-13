@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     LayoutAnimation,
     Modal,
@@ -56,57 +57,75 @@ type AlertItem = {
     created_at?: string;
 };
 
-type WeatherPreset = {
-    key: 'sunny' | 'rainy' | 'heatwave';
-    label: string;
-    temp: string;
-    condition: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    colors: [string, string, string];
-    humidity: string;
-    wind: string;
-    rain: string;
-    evapNote: string;
+/* ================= LIVE WEATHER HELPERS ================= */
+
+type LiveWeather = {
+    temp: number;
+    feelsLike: number;
+    humidity: number;
+    wind: number;
+    rainChance: number;
+    precipitation: number;
+    code: number;
+    isDay: boolean;
 };
 
-const WEATHER_PRESETS: WeatherPreset[] = [
-    {
-        key: 'sunny',
-        label: 'Sunny',
-        temp: '37°C',
-        condition: 'Super cloudy · Feels like 41°',
-        icon: 'partly-sunny',
-        colors: ['#FF8A6B', '#F0524F', '#D93A4A'],
-        humidity: '78%',
-        wind: '12 km/h',
-        rain: '20%',
-        evapNote: 'High evaporation (+1.5%/hr) · Extra watering advised',
-    },
-    {
-        key: 'rainy',
-        label: 'Rainy',
-        temp: '25°C',
-        condition: 'Monsoon showers · Cool breeze',
-        icon: 'rainy',
-        colors: ['#4F8FF0', '#3B6FD9', '#1E40AF'],
-        humidity: '92%',
-        wind: '24 km/h',
-        rain: '85%',
-        evapNote: 'Low evaporation (-0.5%/hr) · Auto-watering paused',
-    },
-    {
-        key: 'heatwave',
-        label: 'Heatwave',
-        temp: '41°C',
-        condition: 'Extreme heat · High UV index',
-        icon: 'sunny',
-        colors: ['#F59E0B', '#EA580C', '#B91C1C'],
-        humidity: '45%',
-        wind: '18 km/h',
-        rain: '5%',
-        evapNote: 'Critical evaporation (+2.8%/hr) · Mist boost active',
-    },
-];
+type ThemeKey = 'sunny' | 'cloudy' | 'rainy' | 'heatwave';
+
+const COLOMBO = { latitude: 6.9271, longitude: 79.8612, name: 'Colombo' };
+
+const THEMES: Record<ThemeKey, [string, string, string]> = {
+    sunny: ['#FFB347', '#F0824F', '#D9573A'],
+    cloudy: ['#8FA3B8', '#64798F', '#43566B'],
+    rainy: ['#4F8FF0', '#3B6FD9', '#1E40AF'],
+    heatwave: ['#F59E0B', '#EA580C', '#B91C1C'],
+};
+
+const TAB_LABEL: Record<ThemeKey, string> = {
+    sunny: 'Sunny',
+    cloudy: 'Cloudy',
+    rainy: 'Rainy',
+    heatwave: 'Heatwave',
+};
+
+// WMO weather codes -> text + icon
+function describeCode(
+    code: number,
+    isDay: boolean
+): { text: string; icon: keyof typeof Ionicons.glyphMap } {
+    if (code === 0) return { text: 'Clear sky', icon: isDay ? 'sunny' : 'moon' };
+    if (code === 1) return { text: 'Mainly clear', icon: isDay ? 'sunny' : 'moon' };
+    if (code === 2) return { text: 'Partly cloudy', icon: isDay ? 'partly-sunny' : 'cloudy-night' };
+    if (code === 3) return { text: 'Overcast', icon: 'cloud' };
+    if (code === 45 || code === 48) return { text: 'Foggy', icon: 'cloud' };
+    if (code >= 51 && code <= 57) return { text: 'Light drizzle', icon: 'rainy' };
+    if (code >= 61 && code <= 67) return { text: 'Rain showers', icon: 'rainy' };
+    if (code >= 80 && code <= 82) return { text: 'Heavy showers', icon: 'rainy' };
+    if (code >= 95) return { text: 'Thunderstorm', icon: 'thunderstorm' };
+    return { text: 'Mixed conditions', icon: 'cloud' };
+}
+
+function pickTheme(w: LiveWeather): ThemeKey {
+    const rainy =
+        (w.code >= 51 && w.code <= 67) ||
+        (w.code >= 80 && w.code <= 82) ||
+        w.code >= 95 ||
+        w.precipitation > 0.2;
+    if (rainy) return 'rainy';
+    if (w.temp >= 36 || w.feelsLike >= 40) return 'heatwave'; // tuned for Sri Lanka humidity
+    if (w.code >= 2) return 'cloudy';
+    return 'sunny';
+}
+
+function evapNote(w: LiveWeather, theme: ThemeKey): string {
+    if (theme === 'rainy') return 'Low evaporation · Auto-watering paused';
+    if (theme === 'heatwave') return 'Critical evaporation · Mist boost advised';
+    if (w.temp >= 32) return 'High evaporation · Extra watering advised';
+    if (w.humidity > 85) return 'Slow evaporation · Water less often';
+    return 'Normal evaporation · Standard schedule';
+}
+
+/* ================= COMPONENT ================= */
 
 export default function WeatherAndAlerts() {
     const router = useRouter();
@@ -114,7 +133,11 @@ export default function WeatherAndAlerts() {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [alerts, setAlerts] = useState<AlertItem[]>([]);
     const [history, setHistory] = useState<AlertItem[]>([]);
-    const [weatherIdx, setWeatherIdx] = useState<number>(0);
+
+    // Live weather state
+    const [weather, setWeather] = useState<LiveWeather | null>(null);
+    const [placeName, setPlaceName] = useState<string>('Locating…');
+    const [weatherError, setWeatherError] = useState<boolean>(false);
 
     // Threshold Customization Modal State
     const [settingsVisible, setSettingsVisible] = useState<boolean>(false);
@@ -122,27 +145,89 @@ export default function WeatherAndAlerts() {
     const [tankThreshold, setTankThreshold] = useState<number>(15);
     const [weatherSyncEnabled, setWeatherSyncEnabled] = useState<boolean>(true);
 
-    const currentWeather = WEATHER_PRESETS[weatherIdx];
+    // Fetch real weather from Open-Meteo (free, no API key)
+    const fetchWeather = useCallback(async () => {
+        try {
+            let coords: { latitude: number; longitude: number; name: string } = { ...COLOMBO };
+
+            try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status === 'granted') {
+                    const pos =
+                        (await Location.getLastKnownPositionAsync()) ??
+                        (await Location.getCurrentPositionAsync({}));
+                    if (pos) {
+                        coords.latitude = pos.coords.latitude;
+                        coords.longitude = pos.coords.longitude;
+                        const [geo] = await Location.reverseGeocodeAsync(pos.coords);
+                        coords.name =
+                            geo?.city || geo?.subregion || geo?.region || 'Your location';
+                    }
+                }
+            } catch (locErr) {
+                // Fall back to Colombo if location fails
+                console.warn('Location unavailable, using Colombo:', locErr);
+            }
+
+            setPlaceName(coords.name);
+
+            const url =
+                `https://api.open-meteo.com/v1/forecast?latitude=${coords.latitude}&longitude=${coords.longitude}` +
+                `&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,is_day` +
+                `&daily=precipitation_probability_max&timezone=auto&forecast_days=1`;
+
+            const res = await fetch(url);
+            const json = await res.json();
+            const c = json.current;
+
+            setWeather({
+                temp: Math.round(c.temperature_2m),
+                feelsLike: Math.round(c.apparent_temperature),
+                humidity: Math.round(c.relative_humidity_2m),
+                wind: Math.round(c.wind_speed_10m),
+                rainChance: json.daily?.precipitation_probability_max?.[0] ?? 0,
+                precipitation: c.precipitation ?? 0,
+                code: c.weather_code,
+                isDay: c.is_day === 1,
+            });
+            setWeatherError(false);
+        } catch (e) {
+            console.error('Weather fetch failed:', e);
+            setWeatherError(true);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchWeather();
+        const t = setInterval(fetchWeather, 10 * 60 * 1000); // refresh every 10 min
+        return () => clearInterval(t);
+    }, [fetchWeather]);
+
+    // Derived values for the weather card
+    const theme: ThemeKey = weather ? pickTheme(weather) : 'sunny';
+    const desc: { text: string; icon: keyof typeof Ionicons.glyphMap } = weather
+        ? describeCode(weather.code, weather.isDay)
+        : { text: '', icon: 'partly-sunny' };
 
     const stats: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }[] = [
-        { icon: 'water-outline', label: 'Humidity', value: currentWeather.humidity },
-        { icon: 'leaf-outline', label: 'Wind', value: currentWeather.wind },
-        { icon: 'rainy-outline', label: 'Rain', value: currentWeather.rain },
+        { icon: 'water-outline', label: 'Humidity', value: weather ? `${weather.humidity}%` : '--' },
+        { icon: 'leaf-outline', label: 'Wind', value: weather ? `${weather.wind} km/h` : '--' },
+        { icon: 'rainy-outline', label: 'Rain', value: weather ? `${weather.rainChance}%` : '--' },
     ];
 
     // Listen to Firebase Real-time Updates
     useEffect(() => {
         const q = query(collection(db, 'notifications'), orderBy('created_at', 'desc'));
-        
+
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const liveAlerts = snapshot.docs.map(d => ({
+            const liveAlerts = snapshot.docs.map((d) => ({
                 id: d.id,
-                ...d.data()
+                ...d.data(),
             })) as AlertItem[];
-            
+
             // Filter unread alerts for the active view, read alerts for history
-            setAlerts(liveAlerts.filter(a => !a.is_read));
-            setHistory(liveAlerts.filter(a => a.is_read));
+            setAlerts(liveAlerts.filter((a) => !a.is_read));
+            setHistory(liveAlerts.filter((a) => a.is_read));
         });
 
         return () => unsubscribe();
@@ -167,7 +252,7 @@ export default function WeatherAndAlerts() {
             const alertRef = doc(db, 'notifications', item.id);
             await updateDoc(alertRef, { is_read: true });
         } catch (error) {
-            console.error("Error updating action in Firebase:", error);
+            console.error('Error updating action in Firebase:', error);
         }
     };
 
@@ -177,7 +262,7 @@ export default function WeatherAndAlerts() {
             const alertRef = doc(db, 'notifications', id);
             await updateDoc(alertRef, { is_read: true });
         } catch (error) {
-            console.error("Error dismissing alert in Firebase:", error);
+            console.error('Error dismissing alert in Firebase:', error);
         }
     };
 
@@ -222,61 +307,51 @@ export default function WeatherAndAlerts() {
 
                 {/* ================= SHEET ================= */}
                 <View style={styles.sheet}>
-                    {/* Weather Card */}
+                    {/* Live Weather Card */}
                     <LinearGradient
-                        colors={currentWeather.colors}
+                        colors={THEMES[theme]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={styles.weatherCard}
                     >
                         <View style={[styles.circle, styles.cardCircle]} />
 
-                        {/* Weather Preset Switcher Pills */}
+                        {/* Auto-detected status pill */}
                         <View style={styles.presetRow}>
-                            {WEATHER_PRESETS.map((preset, idx) => {
-                                const active = idx === weatherIdx;
-                                return (
-                                    <TouchableOpacity
-                                        key={preset.key}
-                                        activeOpacity={0.8}
-                                        onPress={() => setWeatherIdx(idx)}
-                                        style={[
-                                            styles.presetPill,
-                                            active && styles.presetPillActive,
-                                        ]}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.presetPillText,
-                                                active && styles.presetPillTextActive,
-                                            ]}
-                                        >
-                                            {preset.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
+                            <View style={[styles.presetPill, styles.presetPillActive]}>
+                                <Text style={[styles.presetPillText, styles.presetPillTextActive]}>
+                                    {TAB_LABEL[theme]} · Live
+                                </Text>
+                            </View>
                         </View>
 
                         <View style={styles.weatherTop}>
                             <View style={{ flex: 1 }}>
                                 <View style={styles.locationRow}>
                                     <Ionicons name="location" size={14} color="#FFF" />
-                                    <Text style={styles.weatherLocation}>Local Sri Lankan</Text>
+                                    <Text style={styles.weatherLocation}>{placeName}</Text>
                                 </View>
-                                <Text style={styles.weatherTemp}>{currentWeather.temp}</Text>
+                                <Text style={styles.weatherTemp}>
+                                    {weather ? `${weather.temp}°C` : '--°C'}
+                                </Text>
                                 <Text style={styles.weatherCondition}>
-                                    {currentWeather.condition}
+                                    {weatherError
+                                        ? 'Weather unavailable · Check connection'
+                                        : weather
+                                        ? `${desc.text} · Feels like ${weather.feelsLike}°`
+                                        : 'Loading…'}
                                 </Text>
                             </View>
-                            <Ionicons name={currentWeather.icon} size={76} color="#FFF" />
+                            <Ionicons name={desc.icon} size={76} color="#FFF" />
                         </View>
 
                         {/* Smart Care Tip Banner */}
-                        <View style={styles.careTipBox}>
-                            <Ionicons name="sparkles" size={14} color="#FFF" />
-                            <Text style={styles.careTipText}>{currentWeather.evapNote}</Text>
-                        </View>
+                        {weather && (
+                            <View style={styles.careTipBox}>
+                                <Ionicons name="sparkles" size={14} color="#FFF" />
+                                <Text style={styles.careTipText}>{evapNote(weather, theme)}</Text>
+                            </View>
+                        )}
 
                         <View style={styles.statsRow}>
                             {stats.map((s) => (
@@ -299,7 +374,7 @@ export default function WeatherAndAlerts() {
                                 onPress={() => setSettingsVisible(true)}
                                 style={styles.thresholdChip}
                             >
-                                <Ionicons name="sliders-outline" size={13} color={C.green700} />
+                                <Ionicons name="options-outline" size={13} color={C.green700} />
                                 <Text style={styles.thresholdChipText}>
                                     {'<'} {moistureThreshold}% / {tankThreshold}%
                                 </Text>
@@ -406,21 +481,29 @@ export default function WeatherAndAlerts() {
                             </View>
                         ) : (
                             history.map((h, i) => {
-                                // Dynamic styling based on severity!
+                                // Dynamic styling based on severity
                                 let accent = C.amber;
                                 let soft = C.amberSoft;
                                 let iconName: keyof typeof Ionicons.glyphMap = 'notifications';
 
                                 if (h.severity === 'critical') {
-                                    accent = C.red; soft = C.redSoft; iconName = 'warning';
+                                    accent = C.red;
+                                    soft = C.redSoft;
+                                    iconName = 'warning';
                                 } else if (h.severity === 'warning') {
-                                    accent = C.amber; soft = C.amberSoft; iconName = 'alert-circle';
+                                    accent = C.amber;
+                                    soft = C.amberSoft;
+                                    iconName = 'alert-circle';
                                 } else if (h.severity === 'success') {
-                                    accent = C.green700; soft = C.green100; iconName = 'shield-checkmark';
+                                    accent = C.green700;
+                                    soft = C.green100;
+                                    iconName = 'shield-checkmark';
                                 } else if (h.severity === 'info') {
-                                    accent = C.blue; soft = C.blueSoft; iconName = 'water';
+                                    accent = C.blue;
+                                    soft = C.blueSoft;
+                                    iconName = 'water';
                                 }
-                                
+
                                 return (
                                     <View key={h.id}>
                                         <View style={styles.historyRow}>
@@ -434,7 +517,7 @@ export default function WeatherAndAlerts() {
                                         </View>
                                         {i < history.length - 1 && <View style={styles.divider} />}
                                     </View>
-                                )
+                                );
                             })
                         )}
                     </View>
@@ -592,8 +675,8 @@ const styles = StyleSheet.create({
         borderRadius: 28,
         padding: 20,
         overflow: 'hidden',
-        shadowColor: '#D93A4A',
-        shadowOpacity: 0.3,
+        shadowColor: '#000',
+        shadowOpacity: 0.25,
         shadowRadius: 18,
         shadowOffset: { width: 0, height: 10 },
         elevation: 10,
