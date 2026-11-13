@@ -4,14 +4,14 @@ import { ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const MODULES = [
-    { id: 1, title: '1. Auth & Zones', route: '/ weather-alerts', ready: false, icon: 'person-circle-outline' },
-    { id: 2, title: '2. Plant Library', route: '/weather-alerts', ready: false, icon: 'leaf-outline' },
-    { id: 3, title: '3. My Garden (Twins)', route: '/weather-alerts', ready: false, icon: 'flower-outline' },
-    { id: 4, title: '4. Mock Telemetry', route: '/weather-alerts', ready: false, icon: 'speedometer-outline' },
-    { id: 5, title: '5. Auto Watering', route: '/weather-alerts', ready: false, icon: 'water-outline' },
+    { id: 1, title: '1. Auth & Zones', route: '/auth', ready: false, icon: 'person-circle-outline' },
+    { id: 2, title: '2. Plant Library', route: '/plant-library', ready: false, icon: 'leaf-outline' },
+    { id: 3, title: '3. My Garden (Twins)', route: '/my-garden', ready: false, icon: 'flower-outline' },
+    { id: 4, title: '4. Mock Telemetry', route: '/telemetry', ready: false, icon: 'speedometer-outline' },
+    { id: 5, title: '5. Auto Watering', route: '/auto-watering', ready: false, icon: 'water-outline' },
     { id: 6, title: '6. Weather & Alerts', route: '/weather-alerts', ready: true, icon: 'thunderstorm-outline' },
-    { id: 7, title: '7. Symptom Checker', route: '/weather-alerts', ready: false, icon: 'medkit-outline' },
-    { id: 8, title: '8. Analytics & Reports', route: '/weather-alerts', ready: false, icon: 'bar-chart-outline' },
+    { id: 7, title: '7. Symptom Checker', route: '/symptom-checker', ready: false, icon: 'medkit-outline' },
+    { id: 8, title: '8. Analytics & Reports', route: '/analytics', ready: false, icon: 'bar-chart-outline' },
 ];
 
 export default function TeamHub() {
@@ -30,7 +30,7 @@ export default function TeamHub() {
                     <TouchableOpacity
                         key={m.id}
                         activeOpacity={0.85}
-                        onPress={() => router.push('/weather-alerts' as any)}
+                        onPress={() => router.push(m.route as any)}
                         style={[styles.card, m.ready && styles.cardActive]}
                     >
                         <View style={[styles.iconBox, m.ready && styles.iconBoxActive]}>
@@ -45,7 +45,7 @@ export default function TeamHub() {
                                 {m.title}
                             </Text>
                             <Text style={styles.cardStatus}>
-                                {m.ready ? 'Ready · Tap to open Module 6' : 'Pending teammate PR'}
+                                {m.ready ? 'Ready · Tap to open Module' : 'Pending teammate PR'}
                             </Text>
                         </View>
                         <Ionicons
