@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Slider from '@react-native-community/slider'; // Slider එකක් නැත්නම් standard progress slider එකක් overlay කරන්න පුළුවන්, මෙතන අපි customized horizontal indicator එකක් use කරමු.
+import Slider from '@react-native-community/slider'; 
 
 export default function MockSimulatorScreen() {
   // State variables for Demo overrides
