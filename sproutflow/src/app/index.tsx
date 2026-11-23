@@ -10,8 +10,8 @@ const MODULES = [
     { id: 4, title: '4. Mock Telemetry', route: '/simulator_call', ready: false, icon: 'speedometer-outline' },
     { id: 5, title: '5. Auto Watering', route: '/auto-watering', ready: false, icon: 'water-outline' },
     { id: 6, title: '6. Weather & Alerts', route: '/weather-alerts', ready: true, icon: 'thunderstorm-outline' },
-    { id: 7, title: '7. Symptom Checker', route: '/symptom-checker', ready: false, icon: 'medkit-outline' },
-    { id: 8, title: '8. Analytics & Reports', route: '/analytics', ready: false, icon: 'bar-chart-outline' },
+    { id: 7, title: '7. Symptom Checker', route: '/symptom-checker', ready: true, icon: 'medkit-outline' },
+    { id: 8, title: '8. Analytics & Reports', route: '/analytics', ready: true, icon: 'bar-chart-outline' },
 ];
 
 export default function TeamHub() {
