@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 const MODULES = [
     { id: 1, title: '1. Auth & Zones', route: '/auth', ready: false, icon: 'person-circle-outline' },
-    { id: 2, title: '2. Plant Library', route: '/plant-library', ready: false, icon: 'leaf-outline' },
+    { id: 2, title: '2. Plant Library', route: '/plant-library', ready: true, icon: 'leaf-outline' },
     { id: 3, title: '3. My Garden (Twins)', route: '/garden-dashboard', ready: false, icon: 'flower-outline' },
     { id: 4, title: '4. Mock Telemetry', route: '/simulator_call', ready: false, icon: 'speedometer-outline' },
     { id: 5, title: '5. Auto Watering', route: '/auto-watering', ready: false, icon: 'water-outline' },
