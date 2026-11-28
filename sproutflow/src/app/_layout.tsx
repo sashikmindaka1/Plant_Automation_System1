@@ -8,6 +8,8 @@ export default function Layout() {
             <Stack.Screen name="weather-alerts" />
             <Stack.Screen name="symptom-checker" />
             <Stack.Screen name="simulator_call" />
+            <Stack.Screen name="plant-library" />
+            <Stack.Screen name="plant-species/[id]" />
         </Stack>
     );
 }
